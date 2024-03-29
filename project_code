@@ -1,0 +1,133 @@
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import IntegrityError
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///products.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = 'your_secret_key'  # Change this to a random secret key
+db = SQLAlchemy(app)
+
+# Define Product model
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    manufacturer = db.Column(db.String(100))
+    serial_number = db.Column(db.String(50), unique=True)
+    manufacture_date = db.Column(db.Date)
+    warranty_information = db.Column(db.Text)
+    category = db.Column(db.String(50))
+
+# User Authentication and Authorization (Sample implementation)
+def authenticate(username, password):
+    # Sample user authentication logic
+    if username == 'admin' and password == 'password':
+        return True
+    return False
+
+# Endpoint for user login
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+
+    if authenticate(username, password):
+        # Generate JWT token and return to client
+        token = 'your_generated_jwt_token'
+        return jsonify({'token': token}), 200
+    else:
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+# Endpoint for product registration
+@app.route('/api/products', methods=['POST'])
+def register_product():
+    data = request.json
+    name = data.get('name')
+    description = data.get('description')
+    manufacturer = data.get('manufacturer')
+    serial_number = data.get('serial_number')
+    manufacture_date = data.get('manufacture_date')
+    warranty_information = data.get('warranty_information')
+    category = data.get('category')
+
+    # Validate required fields
+    if not (name and serial_number and manufacture_date):
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    # Create a new product instance
+    new_product = Product(
+        name=name,
+        description=description,
+        manufacturer=manufacturer,
+        serial_number=serial_number,
+        manufacture_date=manufacture_date,
+        warranty_information=warranty_information,
+        category=category
+    )
+
+    # Add product to the database
+    try:
+        db.session.add(new_product)
+        db.session.commit()
+        return jsonify({'message': 'Product registered successfully'}), 201
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'error': 'Serial number already exists'}), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'Internal server error'}), 500
+
+# Endpoint for searching and retrieving products
+@app.route('/api/products', methods=['GET'])
+def search_products():
+    # Sample implementation for demonstration
+    # You may need to implement more complex search logic
+    query_params = request.args.to_dict()
+    results = Product.query.filter_by(**query_params).all()
+    return jsonify([product.serialize() for product in results])
+
+# Endpoint for updating product information
+@app.route('/api/products/<int:product_id>', methods=['PUT'])
+def update_product(product_id):
+    data = request.json
+    product = Product.query.get(product_id)
+
+    if product:
+        # Update product information if provided in the request
+        for key, value in data.items():
+            setattr(product, key, value)
+        db.session.commit()
+        return jsonify({"message": "Product updated successfully", "product": product.serialize()}), 200
+    else:
+        return jsonify({"error": "Product not found"}), 404
+
+# Endpoint for deleting a product
+@app.route('/api/products/<int:product_id>', methods=['DELETE'])
+def delete_product(product_id):
+    product = Product.query.get(product_id)
+
+    if product:
+        db.session.delete(product)
+        db.session.commit()
+        return jsonify({"message": "Product deleted successfully"}), 200
+    else:
+        return jsonify({"error": "Product not found"}), 404
+
+# Product model serialization method
+def serialize(self):
+    return {
+        'id': self.id,
+        'name': self.name,
+        'description': self.description,
+        'manufacturer': self.manufacturer,
+        'serial_number': self.serial_number,
+        'manufacture_date': self.manufacture_date.strftime('%Y-%m-%d'),
+        'warranty_information': self.warranty_information,
+        'category': self.category
+    }
+
+if __name__ == '__main__':
+    db.create_all()
+    app.run(debug=True)
